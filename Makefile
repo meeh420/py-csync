@@ -2,6 +2,10 @@ PYTHON=python
 
 .PHONY: all build install install-user dist check clean test tags
 
+torkel:
+	@$(PYTHON) setup.py -q build
+	@$(PYTHON) test.py
+
 all: test
 
 test: build
@@ -11,12 +15,11 @@ test: build
 	@mkdir .tmp/b
 	@echo test > .tmp/a/testfile
 	$(PYTHON) test.py .tmp/a .tmp/b
-	@test -r .tmp/b/testfile && echo Sucess!
-	@test -r .tmp/b/testfile || echo Test failed!
+	@echo -n "Test: "
+	@if [ -r .tmp/b/testfile ]; then echo passed! ; else echo failed! ; fi
 
 build:
 	$(PYTHON) setup.py build
-#	$(PYTHON) setup.py -q build
 
 install: build
 	$(PYTHON) setup.py install
