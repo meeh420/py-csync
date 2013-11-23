@@ -7,6 +7,9 @@
 //#include "csync_private.h"
 // ctx->status & CSYNC_STATUS_INIT
 
+// If we follow python naming convention
+// CSyncObject
+// CSync_Type
 
 /** Exceptions. */
 
@@ -23,15 +26,12 @@ typedef struct {
     PyObject_HEAD
     // Type-specific fields go here:
     CSYNC *ctx;
-    PyObject *callback;
-    PyObject *auth_callback;
-    /*
     struct {
         PyObject *auth;
-        PyObject *file_progress;
-        PyObject *overall_progress;
+        PyObject *tree_walk;
+//        PyObject *file_progress;
+//        PyObject *overall_progress;
     } callbacks;
-    */
 } CSync;
 //} CSyncObject;
 
@@ -48,8 +48,8 @@ _py_csync_new (PyTypeObject *type, PyObject *args, PyObject *kwds)
 
     // clear all members
     self->ctx = NULL;
-    self->callback = NULL;
-    self->auth_callback = NULL;
+    self->callbacks.auth = NULL;
+    self->callbacks.tree_walk = NULL;
 
     return (PyObject*) self;
 }
@@ -60,11 +60,14 @@ _py_csync_new (PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 _py_csync_init (CSync *self, PyObject *args, PyObject *kwargs)
 {
-    static char *kwlist[] = { "local", "remote", NULL};
+//    static char *kwlist[] = { "local", "remote", NULL};
+    static const char *kwlist[] = { "local", "remote", NULL};
     const char *local, *remote;
 
+//    if (! PyArg_ParseTupleAndKeywords (args, kwargs, "|ss",
+//                                       kwlist, &local, &remote))
     if (! PyArg_ParseTupleAndKeywords (args, kwargs, "|ss",
-                                       kwlist, &local, &remote))
+                                       (char**)kwlist, &local, &remote))
         return -1;
 
     assert (self->ctx == NULL);
@@ -118,7 +121,7 @@ _py_auth_callback_wrapper (const char *prompt,
     assert (self);
 
     arglist = Py_BuildValue ("(sii)", prompt, echo, verify);
-    result = PyObject_CallObject (self->auth_callback, arglist);
+    result = PyObject_CallObject (self->callbacks.auth, arglist);
     Py_XDECREF (arglist);
     if (! result) {
         // Python error / exception in callback
@@ -151,10 +154,57 @@ _py_auth_callback_wrapper (const char *prompt,
 static int
 _py_treewalk_visit_func (TREE_WALK_FILE *file, void *userdata)
 {
-    printf ("visitor: %p\n", userdata);
-    return 1;
+    CSync *self = (CSync*) userdata;
+    PyObject *cb_args;
+    PyObject *result;
+
+    cb_args = Py_BuildValue ("sdIIIii",
+                             file->path,
+                             (double) file->modtime,
+                             (unsigned int) file->uid,
+                             (unsigned int) file->gid,
+                             (unsigned int) file->mode,
+                             file->type,
+                             file->instruction);
+    if (! cb_args) return -1;
+
+    result = PyObject_CallObject (self->callbacks.tree_walk, cb_args);
+    Py_XDECREF (cb_args);
+    if (! result) return -1;  // abort
+
+    // returning a negative number makes csync_walk_local_tree()
+    // return -1. Q: Howto detect csync internal error vs visitor function
+    // returning error?
+    return 0;
 }
 
+
+static PyObject *
+_py_csync_walk_tree (CSync *self, PyObject *args,
+                     int (*walk_func) (CSYNC*, csync_treewalk_visit_func*, int))
+{
+    PyObject *visitor;
+    int filter;
+    int rv;
+
+    if (! PyArg_ParseTuple (args, "Oi", &visitor, &filter))
+        return NULL;
+    if (! PyCallable_Check (visitor)) {
+        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
+        return NULL;
+    }
+
+    self->callbacks.tree_walk = visitor;
+    rv = walk_func (self->ctx, _py_treewalk_visit_func, filter);
+//    printf ("visitor returns: %d\n", rv);
+    self->callbacks.tree_walk = NULL;   // borrowed reference
+
+    // @todo rv==-1 can mean both csync error or error in python callback
+    if (! CSYNC_STATUS_IS_OK (rv))
+        return NULL;    // pass error back
+
+    Py_RETURN_NONE;
+}
 
 
 
@@ -166,70 +216,23 @@ _py_treewalk_visit_func (TREE_WALK_FILE *file, void *userdata)
 static PyObject *
 py_csync_test (CSync *self, PyObject *args)
 {
-    PyObject *arglist;
-    PyObject *result;
-
-    arglist = Py_BuildValue ("()");
-    result = PyObject_CallObject (self->callback, arglist);
-    Py_XDECREF (arglist);
-    if (! result) return NULL;    // pass error back
-    Py_DECREF(result);
-    Py_RETURN_NONE;
-
-//    result = PyObject_CallObject (self->callback, args);
-//    return result;
-
-    // use result ...
-    // Py_DECREF(result);
-    // Py_RETURN_NONE;
-}
-
-/*
-// @todo None => no callback
-static PyObject *
-py_csync_set_callback (CSync *self, PyObject *args)
-{
-    PyObject *tmp;
-
-    if (! PyArg_ParseTuple (args, "O:set_callback", &tmp))
-        return NULL;
-    if (! PyCallable_Check (tmp)) {
-        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
-        return NULL;
-    }
-
-    Py_INCREF (tmp);
-    Py_XDECREF (self->callback);
-    self->callback = tmp;
     Py_RETURN_NONE;
 }
-*/
 
 
+
+// @note looks like visitor is called regardless of 'filter'
 static PyObject *
 py_csync_walk_local_tree (CSync *self, PyObject *args)
 {
-    PyObject *visitor;
-    int filter;
+    return _py_csync_walk_tree (self, args, csync_walk_local_tree);
+}
 
-    if (! PyArg_ParseTuple (args, "Oi", &visitor, &filter))
-        return NULL;
-    if (! PyCallable_Check (visitor)) {
-        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
-        return NULL;
-    }
 
-    int rv;
-
-    filter = 0x1ff;
-    rv = csync_walk_local_tree (self->ctx, _py_treewalk_visit_func, filter);
-//    rv = csync_walk_remote_tree (self->ctx, _py_treewalk_visit_func, filter);
-    printf ("rv = %d\n", rv);
-    assert (rv==0);
-
-//    if (CSYNC_STATUS_IS_OK (rv))
-
-    Py_RETURN_NONE;
+static PyObject *
+py_csync_walk_remote_tree (CSync *self, PyObject *args)
+{
+    return _py_csync_walk_tree (self, args, csync_walk_remote_tree);
 }
 
 
@@ -249,17 +252,18 @@ py_csync_set_auth_callback (CSync *self, PyObject *args)
     assert (rv == 0);
 
     Py_INCREF (tmp);    // ParseTuple returns borrowed ref, so must inc before storing in self
-    Py_XDECREF (self->auth_callback);
-    self->auth_callback = tmp;
+    Py_XDECREF (self->callbacks.auth);
+    self->callbacks.auth = tmp;
     Py_RETURN_NONE;
 }
 
 
+// @todo return PyNone when NULL
 static PyObject *
 py_csync_get_auth_callback (CSync *self)
 {
-    Py_XINCREF (self->auth_callback);
-    return self->auth_callback;
+    Py_XINCREF (self->callbacks.auth);
+    return self->callbacks.auth;
 }
 
 
@@ -454,6 +458,7 @@ static PyMethodDef CSyncMethods[] = {
     { "set_auth_callback",  (PyCFunction) py_csync_set_auth_callback,   METH_VARARGS,   "docstring" },
     { "get_auth_callback",  (PyCFunction) py_csync_get_auth_callback,   METH_NOARGS,    "docstring" },
     { "walk_local_tree",    (PyCFunction) py_csync_walk_local_tree,     METH_VARARGS,   "docstring" },
+    { "walk_remote_tree",   (PyCFunction) py_csync_walk_remote_tree,    METH_VARARGS,   "docstring" },
 
     // just testing ...
 //    { "set_callback",       (PyCFunction) py_csync_set_callback,        METH_VARARGS,   "docstring" },
