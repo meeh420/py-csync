@@ -10,6 +10,48 @@ print '=== BEGIN TEST ==='
 #cs.set_config_dir ("/tmp/check_csync")
 
 
+
+## Log level and log callback (module methods)
+
+
+print csync.get_log_level()
+csync.set_log_level(0xff)
+loglevel = csync.get_log_level()
+assert (loglevel==0xff)
+print loglevel
+
+# Q: where is log levels documented?
+csync.set_log_level(8)
+
+# Note: If not setting log_callback csync's default log handler is used.
+# It outputs messages like this:
+# [2013/11/23 18:16:59.370321, 7] csync_lock:  Creating lock file: /home/torkel/.csync/lock
+
+# (int level/verbosity, function_name, log_message)
+# Note: log_message is prefixed with function_name (why??)
+def log_callback (*args):
+    level = str(args[0])
+    function = args[1]
+    message = args[2][len(function)+2:]
+    print "L=" + level + "\t" + message
+
+#csync.set_log_callback (lambda *args: sys.stdout.write(str(args)+"\n"))
+
+csync.set_log_callback (log_callback)
+# @todo csync.set_log_callback (None)
+
+assert (csync.get_log_callback() == log_callback)
+
+cs = csync.CSync ("testdir", "tmp")
+cs.init()
+#cs.update()
+#cs.propagate()
+#cs.commit()
+
+exit(0)
+
+
+
 ## Walk local/remote file tree
 
 # (path, modtime, uid, gid, mode, type, instruction)
@@ -19,12 +61,13 @@ print '=== BEGIN TEST ==='
 import pwd
 from datetime import datetime
 def treewalk_visitor (*args):
+    #print map(type, args)
     filename = args[0]
     #time = time.ctime (args[1])
     modtime = datetime.fromtimestamp(args[1]).strftime("%F %H:%M")
     user = pwd.getpwuid (args[2])[0]    # slow!
-    mode = args[4] & 0b111111111
-    print oct(mode) + "\t" + user + "\t" + modtime + "   " + filename
+    mode = oct(args[4] & 0b111111111)
+    print mode + "\t" + user + "\t" + modtime + "   " + filename
 
 
 import os

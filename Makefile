@@ -39,6 +39,7 @@ clean:
 	rm -rf build/
 	rm -rf dist/
 	rm -rf .tmp/
+	# find -name .csync_journal\* | xargs rm -v
 
 tags:
 	ctags csyncmodule.c

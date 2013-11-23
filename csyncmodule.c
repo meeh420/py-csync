@@ -17,6 +17,16 @@
 
 
 
+
+/** Global variables / state */
+static struct {
+    PyObject *log_callback;
+//} globals;
+} globals = {0};    // zero init. (not needed; compiler shall do it)
+
+
+
+
 /**
  * The CSync Python type.
  */
@@ -37,6 +47,7 @@ typedef struct {
 
 
 // Constructor (allocate)
+// @todo check if ctor args is passed in args
 static PyObject *
 _py_csync_new (PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
@@ -98,6 +109,41 @@ _py_csync_dealloc (CSync *self)
 
 
 // Misc functions
+
+
+static void
+_py_log_callback_wrapper (int verbosity,
+                          const char *function,
+                          const char *buffer,
+                          void *userdata)
+{
+    PyObject *cb_args;
+    PyObject *result;
+
+    cb_args = Py_BuildValue ("iss", verbosity, function, buffer);
+    assert (cb_args);   // @todo pass exception back to interpereter. but how??
+
+    result = PyObject_CallObject (globals.log_callback, cb_args);
+    Py_DECREF (cb_args);
+    if (! result) {
+        fprintf (stderr, "Python error in callback. No way to abort csync!\n");
+        // @todo PyErr_Print() before aborting
+        abort();
+        // Possible fix
+        // 1) Use setjmp/longjump to do a non-local exit?
+        // 2) Own csync error value to report this?
+        //    I.e., callback returns FIRST_USER_ERROR+N, then csync
+        //    return negative error that can be mapped back to user
+        //    error code (N).
+    }
+
+    if (result != Py_None) {
+        PyErr_Warn (PyExc_RuntimeWarning,
+                    "Ignoring return value from 'log_handler. "
+                    "It should return None");
+    }
+    Py_DECREF (result);
+}
 
 
 // Python callback is passed: (string prompt, bool echo, bool verify)
@@ -169,8 +215,11 @@ _py_treewalk_visit_func (TREE_WALK_FILE *file, void *userdata)
     if (! cb_args) return -1;
 
     result = PyObject_CallObject (self->callbacks.tree_walk, cb_args);
-    Py_XDECREF (cb_args);
+    Py_DECREF (cb_args);
     if (! result) return -1;  // abort
+
+    // @todo handle result
+    Py_DECREF (result);
 
     // returning a negative number makes csync_walk_local_tree()
     // return -1. Q: Howto detect csync internal error vs visitor function
@@ -218,7 +267,6 @@ py_csync_test (CSync *self, PyObject *args)
 {
     Py_RETURN_NONE;
 }
-
 
 
 // @note looks like visitor is called regardless of 'filter'
@@ -540,6 +588,75 @@ py_csync_version (PyObject *self, PyObject *args)
 }
 
 
+static PyObject *
+py_csync_set_log_level (PyObject *module, PyObject *args)
+{
+    int rv, level;
+    if (! PyArg_ParseTuple (args, "i", &level))
+        return NULL;
+
+//    rv = csync_set_log_level ((int) PyInt_AsLong (tmp));
+//    assert (rv==0);
+
+    // @todo disallow -1 as loglevel? since csync_get_log_level
+    // uses -1 to signal error.
+//    level = (int) PyInt_AsLong (tmp);   // overflow possible?
+//    printf ("%d\n", level);
+//    if (level == -1) {
+//        // check if error or value just happens to be -1
+//        if (PyErr_Occurred())
+//            assert (0);
+//    }
+
+    rv = csync_set_log_level (level);
+    assert (rv==0);
+
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_get_log_level (PyObject *module)
+{
+    int level = csync_get_log_level ();
+    assert (level!=-1);
+    return PyInt_FromLong (level); // if error, NULL is returned
+}
+
+
+// @todo pass None to unset / reset to default
+static PyObject *
+py_csync_set_log_callback (PyObject *module, PyObject *args)
+{
+    PyObject *tmp;
+
+    if (! PyArg_ParseTuple (args, "O", &tmp))
+        return NULL;
+    if (! PyCallable_Check (tmp)) {
+        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
+        return NULL;
+    }
+
+    int rv = csync_set_log_callback (_py_log_callback_wrapper);
+    assert (rv == 0);
+
+    Py_INCREF (tmp);
+    Py_XDECREF (globals.log_callback);
+    globals.log_callback = tmp;
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_get_log_callback (PyObject *module)
+{
+    if (! globals.log_callback)
+        Py_RETURN_NONE;
+
+    Py_INCREF (globals.log_callback);
+    return globals.log_callback;
+}
+
 
 
 /** Module init. */
@@ -548,6 +665,10 @@ py_csync_version (PyObject *self, PyObject *args)
 // @todo lower case?
 static PyMethodDef CSyncModuleMethods[] = {
     { "version", py_csync_version, METH_VARARGS, "Get the csync version string." },
+    { "set_log_level", py_csync_set_log_level, METH_VARARGS, "docstring" },
+    { "get_log_level", (PyCFunction) py_csync_get_log_level, METH_NOARGS, "docstring" },
+    { "set_log_callback", py_csync_set_log_callback, METH_VARARGS, "docstring" },
+    { "get_log_callback", (PyCFunction) py_csync_get_log_callback, METH_NOARGS, "docstring" },
     { NULL }
 };
 
