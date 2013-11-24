@@ -11,10 +11,12 @@
 // CSyncObject
 // CSync_Type
 
+// PyErr_WriteUnraisable
+
+
 /** Exceptions. */
 
 //static PyObject *CSyncError;
-
 
 
 
@@ -269,6 +271,58 @@ py_csync_test (CSync *self, PyObject *args)
 }
 
 
+static PyObject *
+py_csync_enable_conflictcopys (CSync *self)
+{
+    int rv = csync_enable_conflictcopys (self->ctx);
+    assert (rv==0);
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_set_local_only (CSync *self, PyObject *args)
+{
+    int rv;
+//    PyObject *tmp;
+
+    // This will require an boolean
+    // @todo does these set python exception if failes?
+//    assert (PyTuple_Size (args) == 1);
+//    //assert (PyBool_Check (PyTuple_GetItem (args, 1)));
+//    tmp = PyTuple_GetItem (args, 1);
+//    assert (PyBool_Check (tmp));
+//    rv = csync_set_local_only (self->ctx, tmp==Py_True);
+//    assert (rv==0);
+
+    // This will accept any Python type and check if its true.
+//    rv = PyObject_IsTrue (PyTuple_GetItem(args,0));
+//    if (rv == -1) return NULL;
+
+    // This will accept any(?) type convertible to integer.
+    // @note Python3 supports "p" to accept a boolean predicate.
+    if (! PyArg_ParseTuple (args, "i", &rv))
+        return NULL;
+
+    rv = csync_set_local_only (self->ctx, rv);
+    assert (rv==0);
+
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_get_local_only (CSync *self)
+{
+//    if (csync_get_local_only (self->ctx))
+//        Py_RETURN_TRUE;
+//    else
+//        Py_RETURN_FALSE;
+    // Ok, since csync function can not fail.
+    return PyBool_FromLong (csync_get_local_only (self->ctx));
+}
+
+
 // @note looks like visitor is called regardless of 'filter'
 static PyObject *
 py_csync_walk_local_tree (CSync *self, PyObject *args)
@@ -391,6 +445,7 @@ py_csync_is_statedb_disabled (CSync *self)
         Py_RETURN_TRUE;
     else
         Py_RETURN_FALSE;
+    // @todo PyBool_FromLong
 }
 
 
@@ -507,6 +562,10 @@ static PyMethodDef CSyncMethods[] = {
     { "get_auth_callback",  (PyCFunction) py_csync_get_auth_callback,   METH_NOARGS,    "docstring" },
     { "walk_local_tree",    (PyCFunction) py_csync_walk_local_tree,     METH_VARARGS,   "docstring" },
     { "walk_remote_tree",   (PyCFunction) py_csync_walk_remote_tree,    METH_VARARGS,   "docstring" },
+
+    { "enable_conflictcopys",   (PyCFunction) py_csync_enable_conflictcopys,    METH_NOARGS,    "docstring" },
+    { "set_local_only",         (PyCFunction) py_csync_set_local_only,          METH_VARARGS,   "docstring" },
+    { "get_local_only",         (PyCFunction) py_csync_get_local_only,          METH_NOARGS,    "docstring" },
 
     // just testing ...
 //    { "set_callback",       (PyCFunction) py_csync_set_callback,        METH_VARARGS,   "docstring" },

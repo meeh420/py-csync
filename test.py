@@ -9,10 +9,20 @@ print '=== BEGIN TEST ==='
 #cs = csync.Create ("/tmp/check_csync1", "dummy://foo/bar")
 #cs.set_config_dir ("/tmp/check_csync")
 
+cs = csync.CSync ("testdir", "tmp")
+print cs.get_local_only()
+cs.set_local_only (True)
+print cs.get_local_only()
+cs.set_local_only (1)
+cs.set_local_only (0)
+
+cs.enable_conflictcopys()
+# Note: No function to check status.
+
+exit(0)
 
 
 ## Log level and log callback (module methods)
-
 
 print csync.get_log_level()
 csync.set_log_level(0xff)
@@ -48,7 +58,6 @@ cs.init()
 #cs.propagate()
 #cs.commit()
 
-exit(0)
 
 
 
