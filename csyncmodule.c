@@ -4,14 +4,21 @@
 #undef NDEBUG
 #include <assert.h>
 
-//#include "csync_private.h"
-// ctx->status & CSYNC_STATUS_INIT
+/*
+#include "csync_private.h"
+ctx->status & CSYNC_STATUS_INIT
 
-// If we follow python naming convention
-// CSyncObject
-// CSync_Type
+If we follow python naming convention:
+CSyncObject
+CSync_Type
 
-// PyErr_WriteUnraisable
+PyErr_WriteUnraisable
+
+TODO:
+csync_set_module_property()?
+  what for? can't put python objects (owned objects) here since no way
+  to unref on destruction.
+*/
 
 
 /** Exceptions. */
@@ -93,6 +100,7 @@ _py_csync_init (CSync *self, PyObject *args, PyObject *kwargs)
 
     return 0;
     // @todo must free local&remote? (or keep'em on self)
+    // A: no, ParseTuple returns borrowed references
 }
 
 
@@ -271,6 +279,33 @@ py_csync_test (CSync *self, PyObject *args)
 }
 
 
+#ifdef WITH_ICONV
+static PyObject *
+py_csync_set_iconv_codec (CSync *self, PyObject *args)
+{
+    const char *from;
+    if (! PyArg_ParseTuple (args, "s", &from))
+        return NULL;
+
+    int rv = csync_set_iconv_codec (from);
+    assert (rv==0);     // @note returns iconv error number
+    Py_RETURN_NONE;
+}
+#endif
+
+
+static PyObject *
+py_csync_get_status_string (CSync *self)
+{
+    return Py_BuildValue ("s", csync_get_status_string (self->ctx));
+//    const char* str;
+//    str = csync_get_status_string (self->ctx);
+//    return Py_BuildValue ("s", str);    // None if str==NULL
+//    assert (str);   // or return None if string==NULL?
+//    return PyString_FromString (str);
+}
+
+
 static PyObject *
 py_csync_enable_conflictcopys (CSync *self)
 {
@@ -300,6 +335,7 @@ py_csync_set_local_only (CSync *self, PyObject *args)
 //    if (rv == -1) return NULL;
 
     // This will accept any(?) type convertible to integer.
+    // Update: No, will accepts int (and bool is subtype of int)
     // @note Python3 supports "p" to accept a boolean predicate.
     if (! PyArg_ParseTuple (args, "i", &rv))
         return NULL;
@@ -562,10 +598,16 @@ static PyMethodDef CSyncMethods[] = {
     { "get_auth_callback",  (PyCFunction) py_csync_get_auth_callback,   METH_NOARGS,    "docstring" },
     { "walk_local_tree",    (PyCFunction) py_csync_walk_local_tree,     METH_VARARGS,   "docstring" },
     { "walk_remote_tree",   (PyCFunction) py_csync_walk_remote_tree,    METH_VARARGS,   "docstring" },
+    // @todo status_string member instead?
+    { "get_status_string",  (PyCFunction) py_csync_get_status_string,   METH_NOARGS,    "docstring" },
+#ifdef WITH_ICONV
+    { "set_iconv_codec",    (PyCFunction) py_csync_set_iconv_codec,     METH_VARARGS,   "docstring" },
+#endif
 
     { "enable_conflictcopys",   (PyCFunction) py_csync_enable_conflictcopys,    METH_NOARGS,    "docstring" },
     { "set_local_only",         (PyCFunction) py_csync_set_local_only,          METH_VARARGS,   "docstring" },
     { "get_local_only",         (PyCFunction) py_csync_get_local_only,          METH_NOARGS,    "docstring" },
+
 
     // just testing ...
 //    { "set_callback",       (PyCFunction) py_csync_set_callback,        METH_VARARGS,   "docstring" },

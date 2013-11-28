@@ -10,6 +10,20 @@ print '=== BEGIN TEST ==='
 #cs.set_config_dir ("/tmp/check_csync")
 
 cs = csync.CSync ("testdir", "tmp")
+print cs.get_status_string()
+# better to return empty string instead of None?
+#print "Status string: " + str(cs.get_status_string())
+try:
+    cs.set_iconv_codec ("latin1")   # iconv source codec for filenames
+except AttributeError:
+    print "NOTE: CSync compiled without iconv support."
+
+exit(0)
+
+
+
+"""
+cs = csync.CSync ("testdir", "tmp")
 print cs.get_local_only()
 cs.set_local_only (True)
 print cs.get_local_only()
@@ -18,8 +32,8 @@ cs.set_local_only (0)
 
 cs.enable_conflictcopys()
 # Note: No function to check status.
+"""
 
-exit(0)
 
 
 ## Log level and log callback (module methods)
