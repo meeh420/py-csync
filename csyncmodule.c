@@ -15,9 +15,9 @@ CSync_Type
 PyErr_WriteUnraisable
 
 TODO:
-csync_set_module_property()?
-  what for? can't put python objects (owned objects) here since no way
-  to unref on destruction.
+enum csync_notify_type_e
+enum csync_status_codes_e
+enum csync_instructions_e
 */
 
 
@@ -48,8 +48,8 @@ typedef struct {
     struct {
         PyObject *auth;
         PyObject *tree_walk;
-//        PyObject *file_progress;
-//        PyObject *overall_progress;
+        PyObject *file_progress;
+        PyObject *overall_progress;
     } callbacks;
 } CSync;
 //} CSyncObject;
@@ -62,21 +62,24 @@ _py_csync_new (PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     CSync *self;
 
+    puts ("XXX: WHY IS THIS NEVER CALLED?");
+
     self = (CSync*) type->tp_alloc (type, 0);
     if (! self)
         return NULL;
 
     // clear all members
     self->ctx = NULL;
-    self->callbacks.auth = NULL;
-    self->callbacks.tree_walk = NULL;
+    memset (&self->callbacks, 0, sizeof(self->callbacks));
 
     return (PyObject*) self;
 }
 
 
 // Constructor (initialize / construct)
-// q: object will not be constructed if this fails with -1?
+// Q: object will not be constructed if this fails with -1?
+// A: yes. but must set error, else:
+//         SystemError: NULL result without error in PyObject_Call
 static int
 _py_csync_init (CSync *self, PyObject *args, PyObject *kwargs)
 {
@@ -266,6 +269,76 @@ _py_csync_walk_tree (CSync *self, PyObject *args,
 }
 
 
+// @todo test!
+// @todo change assert(0) into aborting callback and pass error back to python.
+//       but how? need csync c api support
+static void
+_py_overall_progress_wrapper (const char *file_name,
+                              int file_no,
+                              int file_cnt,
+                              long long o1,
+                              long long o2,
+                              void *userdata)
+{
+//    puts ("overall-progress");
+    CSync *self = (CSync*) userdata;
+    PyObject *cb_args;
+    PyObject *result;
+
+    // Note: L (long) [PY_LONG_LONG] not available on all platforms.
+    cb_args = Py_BuildValue ("siiLL", file_name, file_no, file_cnt, o1, o2);
+    if (! cb_args) assert(0);
+
+    result = PyObject_CallObject (self->callbacks.overall_progress, cb_args);
+    Py_DECREF (cb_args);
+    if (! result) assert(0);
+    Py_DECREF (result);     // @todo warn if no Py_None?
+}
+
+
+// @todo test!
+// @todo same issue as _py_overall_progress_wrapper
+static void
+_py_file_progress_wrapper (const char *remote_url,
+                           enum csync_notify_type_e kind,
+                           long long o1,
+                           long long o2,
+                           void *userdata)
+{
+    CSync *self = (CSync*) userdata;
+    PyObject *cb_args;
+    PyObject *result;
+
+    // Note: L (long) [PY_LONG_LONG] not available on all platforms.
+    cb_args = Py_BuildValue ("siLL", remote_url, kind, o1, o2);
+    if (! cb_args) assert(0);
+
+    result = PyObject_CallObject (self->callbacks.file_progress, cb_args);
+    Py_DECREF (cb_args);
+    if (! result) assert(0);
+    Py_DECREF (result);     // @todo warn if no Py_None?
+}
+
+
+// helper containing common code to set callbacks
+// @todo unset callback if None is passed
+static int
+_py_set_callback (PyObject *args, PyObject **slot)
+{
+    PyObject *tmp;
+    if (! PyArg_ParseTuple (args, "O", &tmp))
+        return -1;
+    if (! PyCallable_Check (tmp)) {
+        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
+        return -1;
+    }
+
+    Py_INCREF (tmp);
+    Py_XDECREF (*slot);
+    *slot = tmp;
+    return 0;
+}
+
 
 /**
  * CSync methods.
@@ -276,6 +349,32 @@ static PyObject *
 py_csync_test (CSync *self, PyObject *args)
 {
     Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_set_overall_progress_callback (CSync *self, PyObject *args)
+{
+    if (_py_set_callback (args, &self->callbacks.overall_progress) < 0)
+        return NULL;
+    int rv = csync_set_overall_progress_callback (self->ctx, _py_overall_progress_wrapper);
+    assert (rv==0);
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *
+py_csync_set_file_progress_callback (CSync *self, PyObject *args)
+{
+    if (_py_set_callback (args, &self->callbacks.file_progress) < 0)
+        return NULL;
+    int rv = csync_set_file_progress_callback (self->ctx, _py_file_progress_wrapper);
+    assert (rv==0);
+    Py_RETURN_NONE;
+//    return _py_set_callback (args,
+//                             csync_set_file_progress_callback,
+//                             &self->callbacks.file_progress,
+//                             _py_file_progress_wrapper);
 }
 
 
@@ -603,14 +702,14 @@ static PyMethodDef CSyncMethods[] = {
 #ifdef WITH_ICONV
     { "set_iconv_codec",    (PyCFunction) py_csync_set_iconv_codec,     METH_VARARGS,   "docstring" },
 #endif
-
     { "enable_conflictcopys",   (PyCFunction) py_csync_enable_conflictcopys,    METH_NOARGS,    "docstring" },
     { "set_local_only",         (PyCFunction) py_csync_set_local_only,          METH_VARARGS,   "docstring" },
     { "get_local_only",         (PyCFunction) py_csync_get_local_only,          METH_NOARGS,    "docstring" },
 
+    { "set_file_progress_callback", (PyCFunction) py_csync_set_file_progress_callback, METH_VARARGS, "docstring" },
+    { "set_overall_progress_callback", (PyCFunction) py_csync_set_overall_progress_callback, METH_VARARGS, "docstring" },
 
     // just testing ...
-//    { "set_callback",       (PyCFunction) py_csync_set_callback,        METH_VARARGS,   "docstring" },
     { "test", (PyCFunction) py_csync_test, METH_VARARGS, "docstring" },
 
     // @todo boolean statedb member?

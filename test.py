@@ -9,6 +9,43 @@ print '=== BEGIN TEST ==='
 #cs = csync.Create ("/tmp/check_csync1", "dummy://foo/bar")
 #cs.set_config_dir ("/tmp/check_csync")
 
+# $ csync testdir sftp://srv1/home/torkel/foobar
+# ERROR:
+# csync_timediff: Unable to create temporary file: sftp://srv1/home/torkel/foobar/.csync_timediff.ctmp - 
+# csync_init:  Clock skew detected. The time difference is greater than 10 seconds!
+# csync_init: No such file or directory
+
+def log_callback (*args):
+    level = str(args[0])
+    function = args[1]
+    message = args[2][len(function)+2:]
+    print "L=" + level + "\t" + message
+
+csync.set_log_level(8)
+
+def file_progress_cb (*args):
+    print args[0]
+    #print args
+    #print map(type, args)
+
+# XXX callbacks not called! is it becaus doing local only sync?
+#cs = csync.CSync ("testdir", "tmp")
+cs = csync.CSync ("testdir", "sftp://srv1/home/torkel/foobar")
+import getpass
+cs.set_auth_callback (lambda prompt,u1,u2: getpass.getpass(prompt))
+cs.set_file_progress_callback (file_progress_cb)
+cs.set_overall_progress_callback (file_progress_cb)
+cs.init()
+cs.update()
+cs.propagate()
+#cs.reconcile()
+#cs.commit()
+
+exit(0)
+
+
+
+"""
 cs = csync.CSync ("testdir", "tmp")
 print cs.get_status_string()
 # better to return empty string instead of None?
@@ -17,8 +54,8 @@ try:
     cs.set_iconv_codec ("latin1")   # iconv source codec for filenames
 except AttributeError:
     print "NOTE: CSync compiled without iconv support."
+"""
 
-exit(0)
 
 
 
