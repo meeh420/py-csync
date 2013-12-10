@@ -988,7 +988,7 @@ initcsync (void)
 
     // Register type
     Py_INCREF (&CSyncType);
-    PyModule_AddObject (mod, "CSync", (PyObject*) &CSyncType);
+    PyModule_AddObject (mod, "Create", (PyObject*) &CSyncType);
 
     /** Constants */
     PyModule_AddObject (mod, "VERSION", Py_BuildValue ("(iii)", LIBCSYNC_VERSION_MAJOR, LIBCSYNC_VERSION_MINOR, LIBCSYNC_VERSION_MICRO));

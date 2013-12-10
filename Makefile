@@ -1,7 +1,3 @@
-# When testing without installing first:
-# export PYTHONPATH=`pwd`/build/lib.linux-x86_64-2.7/
-# dirname `find build/ -name \*.so`
-
 PYTHON=python
 
 .PHONY: all build install install-user dist check clean test tags
