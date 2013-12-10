@@ -1,0 +1,38 @@
+diff --git i/src/csync.c w/src/csync.c
+index 4767e09..e6f4202 100644
+--- i/src/csync.c
++++ w/src/csync.c
+@@ -1029,6 +1029,15 @@ int csync_get_status(CSYNC *ctx) {
+   return ctx->status;
+ }
+ 
++// XXX Added by torkel
++// http://git.csync.org/users/owncloud/csync.git/commit/?h=ocsync&id=cc6c5e0db5ada62223d3891d44d349d237d9a7f5
++CSYNC_STATUS csync_get_status_code(CSYNC *ctx) {
++  if (ctx == NULL) {
++    return -1;
++  }
++  return ctx->status_code;
++}
++
+ int csync_enable_conflictcopys(CSYNC* ctx){
+   if (ctx == NULL) {
+     return -1;
+diff --git i/src/csync.h w/src/csync.h
+index a393cc4..c000afe 100644
+--- i/src/csync.h
++++ w/src/csync.h
+@@ -523,6 +523,13 @@ int csync_walk_remote_tree(CSYNC *ctx, csync_treewalk_visit_func *visitor, int f
+  */
+ const char *csync_get_status_string(CSYNC *ctx);
+ 
++
++#define HAVE_CSYNC_STATUS_CODE
++//#ifdef HAVE_CSYNC_STATUS_CODE
++CSYNC_STATUS csync_get_status_code(CSYNC *ctx);
++//#endif
++
++
+ #ifdef WITH_ICONV
+ /**
+  * @brief Set iconv source codec for filenames.

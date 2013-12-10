@@ -18,13 +18,22 @@ TODO:
 enum csync_notify_type_e
 enum csync_status_codes_e
 enum csync_instructions_e
+
+django.get_version()    # '1.6'
+django.VERSION          # (1, 6, 0, 'final', 0)
+
+const char *errstr = csync_get_status_string (self->ctx); // always null?
 */
 
+#define ARRAY_LENGTH(arr) (sizeof(arr)/sizeof((arr)[0]))
 
-/** Exceptions. */
 
-//static PyObject *CSyncError;
+// Forward decleare
+//typedef struct CSync;
+struct _CSyncObject;
+typedef struct _CSyncObject CSync;
 
+static PyObject* throw_csync_error (CSync*);
 
 
 /** Global variables / state */
@@ -35,12 +44,24 @@ static struct {
 
 
 
-
 /**
  * The CSync Python type.
  */
 
+struct _CSyncObject {
+    PyObject_HEAD
+    // Type-specific fields go here:
+    CSYNC *ctx;
+    struct {
+        PyObject *auth;
+        PyObject *tree_walk;
+        PyObject *file_progress;
+        PyObject *overall_progress;
+    } callbacks;
+};
+
 // Object struct
+/*
 typedef struct {
     PyObject_HEAD
     // Type-specific fields go here:
@@ -53,7 +74,90 @@ typedef struct {
     } callbacks;
 } CSync;
 //} CSyncObject;
+*/
 
+
+
+/** Exception and error handling. */
+
+static PyObject *CSyncError;
+
+static struct {
+    int code;
+    const char* message;
+} error_strings[] = {
+    { CSYNC_STATUS_OK,                  "OK" },
+    { CSYNC_STATUS_ERROR,               "ERROR" },
+    { CSYNC_STATUS_UNSUCCESSFUL,        "UNSUCCESSFUL" },
+    { CSYNC_STATUS_NO_LOCK,             "NO_LOCK" },
+    { CSYNC_STATUS_STATEDB_LOAD_ERROR,  "STATEDB_LOAD_ERROR" },
+    { CSYNC_STATUS_STATEDB_WRITE_ERROR, "STATEDB_WRITE_ERROR" },
+    { CSYNC_STATUS_NO_MODULE,           "NO_MODULE" },
+    { CSYNC_STATUS_TIMESKEW,            "TIMESKEW" },
+    { CSYNC_STATUS_FILESYSTEM_UNKNOWN,  "FILESYSTEM_UNKNOWN" },
+    { CSYNC_STATUS_TREE_ERROR,          "TREE_ERROR" },
+    { CSYNC_STATUS_MEMORY_ERROR,        "MEMORY_ERROR" },
+    { CSYNC_STATUS_PARAM_ERROR,         "PARAM_ERROR" },
+    { CSYNC_STATUS_UPDATE_ERROR,        "UPDATE_ERROR" },
+    { CSYNC_STATUS_RECONCILE_ERROR,     "RECONCILE_ERROR" },
+    { CSYNC_STATUS_PROPAGATE_ERROR,     "PROPAGATE_ERROR" },
+    { CSYNC_STATUS_REMOTE_ACCESS_ERROR, "REMOTE_ACCESS_ERROR" },
+    { CSYNC_STATUS_REMOTE_CREATE_ERROR, "REMOTE_CREATE_ERROR" },
+    { CSYNC_STATUS_REMOTE_STAT_ERROR,   "REMOTE_STAT_ERROR" },
+    { CSYNC_STATUS_LOCAL_CREATE_ERROR,  "LOCAL_CREATE_ERROR" },
+    { CSYNC_STATUS_LOCAL_STAT_ERROR,    "LOCAL_STAT_ERROR" },
+    { CSYNC_STATUS_PROXY_ERROR,         "PROXY_ERROR" },
+    { CSYNC_STATUS_LOOKUP_ERROR,        "LOOKUP_ERROR" },
+    { CSYNC_STATUS_SERVER_AUTH_ERROR,   "SERVER_AUTH_ERROR" },
+    { CSYNC_STATUS_PROXY_AUTH_ERROR,    "PROXY_AUTH_ERROR" },
+    { CSYNC_STATUS_CONNECT_ERROR,       "CONNECT_ERROR" },
+    { CSYNC_STATUS_TIMEOUT,             "TIMEOUT" },
+    { CSYNC_STATUS_HTTP_ERROR,          "HTTP_ERROR" },
+    { CSYNC_STATUS_PERMISSION_DENIED,   "PERMISSION_DENIED" },
+    { CSYNC_STATUS_NOT_FOUND,           "NOT_FOUND" },
+    { CSYNC_STATUS_FILE_EXISTS,         "FILE_EXISTS" },
+    { CSYNC_STATUS_OUT_OF_SPACE,        "OUT_OF_SPACE" },
+    { CSYNC_STATUS_QUOTA_EXCEEDED,      "QUOTA_EXCEEDED" },
+    { CSYNC_STATUS_SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE" },
+    { CSYNC_STATUS_FILE_SIZE_ERROR,     "FILE_SIZE_ERROR" },
+    { CSYNC_STATUS_CONTEXT_LOST,        "CONTEXT_LOST" },
+    { CSYNC_STATUS_MERGE_FILETREE_ERROR,"MERGE_FILETREE_ERROR" },
+    { CSYNC_STATUS_CSYNC_STATUS_ERROR,  "CSYNC_STATUS_ERROR" },
+    { CSYNC_STATUS_OPENDIR_ERROR,       "OPENDIR_ERROR" },
+    { CSYNC_STATUS_READDIR_ERROR,       "READDIR_ERROR" },
+    { CSYNC_STATUS_OPEN_ERROR,          "OPEN_ERROR" },
+};
+
+
+static PyObject *
+throw_csync_error (CSync *self)
+{
+#ifndef HAVE_CSYNC_STATUS_CODE
+    PyErr_SetString (CSyncError, "Something went terribly wrong!");
+    return NULL;
+#endif
+    int sc = csync_get_status_code (self->ctx);
+    //assert (sc != CSYNC_STATUS_OK);
+    size_t i;
+    const char* str = "(unknown error)";
+    for (i=0; i<sizeof(error_strings)/sizeof(error_strings[0]); ++i) {
+        if (error_strings[i].code == sc) {
+            str = error_strings[i].message;
+            break;
+        }
+    }
+    // XXX: Setting attribute on global exception object. This can't
+    //      be thread safe, right!?!
+    PyObject_SetAttrString (CSyncError, "status", PyInt_FromLong(sc));
+    return PyErr_Format (CSyncError, "%s", str);
+//    return PyErr_Format (err, "libcsync status code: %d", sc);
+}
+
+
+
+/**
+ * Functions that Python requires to implement own type.
+ */
 
 // Constructor (allocate)
 // @todo check if ctor args is passed in args
@@ -121,8 +225,10 @@ _py_csync_dealloc (CSync *self)
 }
 
 
-// Misc functions
 
+/**
+ * Callback wrappers.
+ */
 
 static void
 _py_log_callback_wrapper (int verbosity,
@@ -238,6 +344,7 @@ _py_treewalk_visit_func (TREE_WALK_FILE *file, void *userdata)
     // return -1. Q: Howto detect csync internal error vs visitor function
     // returning error?
     return 0;
+    // @todo return instruction of what to do with the file?
 }
 
 
@@ -338,6 +445,7 @@ _py_set_callback (PyObject *args, PyObject **slot)
     *slot = tmp;
     return 0;
 }
+
 
 
 /**
@@ -507,13 +615,10 @@ py_csync_get_auth_callback (CSync *self)
 static PyObject *
 py_csync_init (CSync *self)
 {
-    int rv = csync_init (self->ctx);
-    // csync_errno_to_status
-//    printf ("init rv = %d\n", rv);
-//    printf ("status: %d\n", csync_get_status (self->ctx));
-//    printf ("status str: %s\n", csync_get_status_string (self->ctx));
-    assert (rv == 0);
-    Py_RETURN_NONE;
+    if (csync_init (self->ctx) == 0)
+        Py_RETURN_NONE;
+
+    return throw_csync_error (self);
 }
 
 
@@ -665,7 +770,7 @@ py_csync_status_ok (CSync *self)
 
 
 /**
- * CSync members, methods and type structure.
+ * CSync type definitions: Members, methods and the type object.
  */
 
 // Members list
@@ -760,7 +865,6 @@ static PyTypeObject CSyncType = {
     0,                              /* tp_alloc */
     _py_csync_new,                  /* tp_new */
 };
-
 
 
 
@@ -874,6 +978,7 @@ static PyMethodDef CSyncModuleMethods[] = {
 
 
 // Only non-static function. Should be named "init<modulename>".
+// @todo check return values
 PyMODINIT_FUNC
 initcsync (void)
 {
@@ -891,7 +996,6 @@ initcsync (void)
     PyModule_AddObject (mod, "CSync", (PyObject*) &CSyncType);
 
     /** Constants */
-    // @todo check rv
     PyModule_AddObject (mod, "VERSION", Py_BuildValue ("(iii)", LIBCSYNC_VERSION_MAJOR, LIBCSYNC_VERSION_MINOR, LIBCSYNC_VERSION_MICRO));
     //PyModule_AddStringConstant (mod, "VERSION_STRING", CSYNC_STRINGIFY(LIBCSYNC_VERSION));
     PyModule_AddIntConstant (mod, "VERSION_MAJOR", LIBCSYNC_VERSION_MAJOR);
@@ -904,11 +1008,35 @@ initcsync (void)
 #ifdef CSYNC_LOG_FILE
     PyModule_AddStringConstant (mod, "LOG_FILE", CSYNC_LOG_FILE);
 #endif
-    // PyModule_AddIntMacro     # uses same name as C macro
 
+
+    /** Error / exceptions */
+    // @todo pull out into own function? (or file?)
+
+    // Register enum constants. It might be more Pythonic to do it like
+    // this: csync.STATUS_{ERROR,OK,etc}
+    // But I like this better: csync.Status.{ERROR,OK,etc}
+    PyObject *m = PyModule_New ("Status");
+    size_t i;
+    for (i=0; i<ARRAY_LENGTH(error_strings); ++i) {
+        PyModule_AddIntConstant (m, error_strings[i].message,
+                                 error_strings[i].code);
+    }
+    PyModule_AddObject (mod, "Status", m); // steals ref to m
 
     // Register custom exceptions
+    // csync.Error members
+    PyObject *dict, *key, *val;
+    dict = PyDict_New();
+    key = PyString_FromString ("status");
+    val = PyInt_FromLong (CSYNC_STATUS_OK);
+    PyDict_SetItem (dict, key, val);
+    Py_DECREF (key);
+    Py_DECREF (val);
+
 //    CSyncError = PyErr_NewException ("csync.Error", NULL, NULL);
-//    Py_INCREF (CSyncError);
-//    PyModule_AddObject (mod, "Error", CSyncError);
+    CSyncError = PyErr_NewException ("csync.Error", NULL, dict);
+    Py_INCREF (CSyncError);
+    //Py_DECREF (dict);     // ???
+    PyModule_AddObject (mod, "Error", CSyncError);
 }
