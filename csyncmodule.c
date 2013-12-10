@@ -133,10 +133,10 @@ throw_csync_error (CSync *self)
     return NULL;
 #endif
     int sc = csync_get_status_code (self->ctx);
+    assert (sc!=-1);    // can only happen if self->ctx is NULL
     //assert (sc != CSYNC_STATUS_OK);
     size_t i;
     const char* str = "(unknown error)";
-    for (i=0; i<sizeof(error_strings)/sizeof(error_strings[0]); ++i) {
     for (i=0; i < ARRAY_LENGTH(error_strings); ++i) {
         if (error_strings[i].code == sc) {
             str = error_strings[i].message;
@@ -148,6 +148,15 @@ throw_csync_error (CSync *self)
     PyObject_SetAttrString (CSyncError, "status", PyInt_FromLong(sc));
     return PyErr_Format (CSyncError, "%s", str);
 //    return PyErr_Format (err, "libcsync status code: %d", sc);
+}
+
+// @todo support printf formating
+//throw_csync_error_format (const char *fmt, ...)
+static PyObject *
+throw_csync_error_string (const char *message)
+{
+    PyErr_SetString (CSyncError, message);
+    return NULL;
 }
 
 
@@ -880,7 +889,7 @@ py_csync_version (PyObject *self, PyObject *args)
 static PyObject *
 py_csync_set_log_level (PyObject *module, PyObject *args)
 {
-    int rv, level;
+    int level;
     if (! PyArg_ParseTuple (args, "i", &level))
         return NULL;
 
@@ -898,7 +907,7 @@ py_csync_set_log_level (PyObject *module, PyObject *args)
 //    }
 
     if (csync_set_log_level (level) < 0)
-        return throw_csync_error (self);
+        return throw_csync_error_string ("Error while setting the log-level");
     Py_RETURN_NONE;
 }
 
@@ -908,7 +917,7 @@ py_csync_get_log_level (PyObject *module)
 {
     int level = csync_get_log_level ();
     if (level == -1)
-        return throw_csync_error (self);
+        return throw_csync_error_string ("Error while getting the log-level");
     return PyInt_FromLong (level); // if error, NULL is returned
 }
 
@@ -926,7 +935,7 @@ py_csync_set_log_callback (PyObject *module, PyObject *args)
     }
 
     if (csync_set_log_callback (_py_log_callback_wrapper) < 0)
-        return throw_csync_error (self);
+        return throw_csync_error_string ("csync_set_log_callback() failed!");
 
     Py_INCREF (tmp);
     Py_XDECREF (globals.log_callback);
