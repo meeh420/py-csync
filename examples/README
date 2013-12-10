@@ -1,8 +1,0 @@
-Examples of using the Python libcsync bindings.
-
-It's possible to run this test without first installing py-csync. But
-then PYTHONPATH must be set up first. On Linux do this:
-
-    cd /path/to/py-csync
-    tmp=`find build/ -name \*.so`
-    export PYTHONPATH=`pwd`/`dirname $tmp`
