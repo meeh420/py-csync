@@ -5,9 +5,6 @@
 #include <assert.h>
 
 /*
-#include "csync_private.h"
-ctx->status & CSYNC_STATUS_INIT
-
 If we follow python naming convention:
 CSyncObject
 CSync_Type
@@ -16,7 +13,6 @@ PyErr_WriteUnraisable
 
 TODO:
 enum csync_notify_type_e
-enum csync_status_codes_e
 enum csync_instructions_e
 
 django.get_version()    # '1.6'
@@ -141,6 +137,7 @@ throw_csync_error (CSync *self)
     size_t i;
     const char* str = "(unknown error)";
     for (i=0; i<sizeof(error_strings)/sizeof(error_strings[0]); ++i) {
+    for (i=0; i < ARRAY_LENGTH(error_strings); ++i) {
         if (error_strings[i].code == sc) {
             str = error_strings[i].message;
             break;
@@ -466,7 +463,7 @@ py_csync_set_overall_progress_callback (CSync *self, PyObject *args)
     if (_py_set_callback (args, &self->callbacks.overall_progress) < 0)
         return NULL;
     int rv = csync_set_overall_progress_callback (self->ctx, _py_overall_progress_wrapper);
-    assert (rv==0);
+    assert (rv==0); // q: will only fail if self->ctx==0 ?
     Py_RETURN_NONE;
 }
 
@@ -517,7 +514,7 @@ static PyObject *
 py_csync_enable_conflictcopys (CSync *self)
 {
     int rv = csync_enable_conflictcopys (self->ctx);
-    assert (rv==0);
+    if (rv!=0) return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -548,8 +545,7 @@ py_csync_set_local_only (CSync *self, PyObject *args)
         return NULL;
 
     rv = csync_set_local_only (self->ctx, rv);
-    assert (rv==0);
-
+    if (rv!=0) return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -625,17 +621,12 @@ py_csync_init (CSync *self)
 static PyObject *
 py_csync_add_exclude_list (CSync *self, PyObject *args)
 {
-    int rv;
     const char *path;
-
     if (! PyArg_ParseTuple (args, "s", &path))
         return NULL;
 
-    // error if file does not exists. howto get error code / str?
-//    rv = csync_add_exclude_list (self->ctx, "/tmp/a/xignore");
-    rv = csync_add_exclude_list (self->ctx, path);
-    assert (rv==0);
-
+    if (csync_add_exclude_list (self->ctx, path) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -643,16 +634,16 @@ py_csync_add_exclude_list (CSync *self, PyObject *args)
 static PyObject *
 py_csync_disable_statedb (CSync *self)
 {
-    int rv = csync_disable_statedb (self->ctx);
-    assert (rv==0);
+    if (csync_disable_statedb (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
 static PyObject *
 py_csync_enable_statedb (CSync *self)
 {
-    int rv = csync_enable_statedb (self->ctx);
-    assert (rv==0);
+    if (csync_enable_statedb (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -661,18 +652,19 @@ static PyObject *
 py_csync_get_config_dir (CSync *self)
 {
     const char *path = csync_get_config_dir (self->ctx);
-    assert (path);
+    if (!path) return throw_csync_error (self);
     return PyString_FromString (path);
 }
 
 
 // @note segfault if init() is not called first!
 // @note segfault if statedb disabled (might return NULL? but howto report errors?)
+// @todo return None if NULL?
 static PyObject *
 py_csync_get_statedb_file (CSync *self)
 {
     const char *path = csync_get_statedb_file (self->ctx);
-    assert (path);
+    if (!path) return throw_csync_error (self);
     return PyString_FromString (path);
 }
 
@@ -692,8 +684,8 @@ py_csync_is_statedb_disabled (CSync *self)
 static PyObject *
 py_csync_propagate (CSync *self)
 {
-    int rv = csync_propagate (self->ctx);
-    assert (rv==0);
+    if (csync_propagate (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -701,8 +693,8 @@ py_csync_propagate (CSync *self)
 static PyObject *
 py_csync_reconcile (CSync *self)
 {
-    int rv = csync_reconcile (self->ctx);
-    assert (rv==0);
+    if (csync_reconcile (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -710,8 +702,8 @@ py_csync_reconcile (CSync *self)
 static PyObject *
 py_csync_update (CSync *self)
 {
-    int rv = csync_update (self->ctx);
-    assert (rv==0);
+    if (csync_update (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -719,8 +711,8 @@ py_csync_update (CSync *self)
 static PyObject *
 py_csync_commit (CSync *self)
 {
-    int rv = csync_commit (self->ctx);
-    assert (rv==0);
+    if (csync_commit (self->ctx) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -728,13 +720,11 @@ py_csync_commit (CSync *self)
 static PyObject *
 py_csync_set_config_dir (CSync *self, PyObject *args)
 {
-    int rv;
     const char *path;
     if (! PyArg_ParseTuple (args, "s", &path))
         return NULL;
-
-    rv = csync_set_config_dir (self->ctx, path);
-    assert (rv==0);
+    if (csync_set_config_dir (self->ctx, path) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -883,11 +873,6 @@ py_csync_version (PyObject *self, PyObject *args)
         return NULL;
     if (reqver == -1)
         reqver = CSYNC_VERSION_INT (LIBCSYNC_VERSION_MAJOR, LIBCSYNC_VERSION_MINOR, LIBCSYNC_VERSION_MICRO);
-
-//    const char* verstr = csync_version (reqver);
-//    if (verstr == NULL) Py_RETURN_NONE;
-//    return PyString_FromString (NULL);
-
     return Py_BuildValue ("s", csync_version (reqver));  // NULL -> NoneType
 }
 
@@ -912,9 +897,8 @@ py_csync_set_log_level (PyObject *module, PyObject *args)
 //            assert (0);
 //    }
 
-    rv = csync_set_log_level (level);
-    assert (rv==0);
-
+    if (csync_set_log_level (level) < 0)
+        return throw_csync_error (self);
     Py_RETURN_NONE;
 }
 
@@ -923,7 +907,8 @@ static PyObject *
 py_csync_get_log_level (PyObject *module)
 {
     int level = csync_get_log_level ();
-    assert (level!=-1);
+    if (level == -1)
+        return throw_csync_error (self);
     return PyInt_FromLong (level); // if error, NULL is returned
 }
 
@@ -933,7 +918,6 @@ static PyObject *
 py_csync_set_log_callback (PyObject *module, PyObject *args)
 {
     PyObject *tmp;
-
     if (! PyArg_ParseTuple (args, "O", &tmp))
         return NULL;
     if (! PyCallable_Check (tmp)) {
@@ -941,8 +925,8 @@ py_csync_set_log_callback (PyObject *module, PyObject *args)
         return NULL;
     }
 
-    int rv = csync_set_log_callback (_py_log_callback_wrapper);
-    assert (rv == 0);
+    if (csync_set_log_callback (_py_log_callback_wrapper) < 0)
+        return throw_csync_error (self);
 
     Py_INCREF (tmp);
     Py_XDECREF (globals.log_callback);
@@ -951,6 +935,8 @@ py_csync_set_log_callback (PyObject *module, PyObject *args)
 }
 
 
+// Note: returns the Python callback, not the underlaying callback
+//       passed to csync.
 static PyObject *
 py_csync_get_log_callback (PyObject *module)
 {
